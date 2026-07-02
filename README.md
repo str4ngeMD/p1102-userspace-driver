@@ -1,4 +1,8 @@
-> Anyone who can contribute is welcome.
+> Anyone who can contribute is welcome. \
+> read RESEARCH_HISTORy.md for details. 
+> 
+> This is not yet a turnkey solution. \
+> I hope either I or someone else can make this very easy to install/use for normal people, in the future.
 
 # HP LaserJet Pro P1102 userspace Loopback Print Driver for macOS (Apple Silicon)
 
