@@ -124,6 +124,38 @@ def usb_monitor_thread():
             continue
         time.sleep(2)
 
+def get_pbm_dimensions(pbm_path):
+    try:
+        with open(pbm_path, "rb") as f:
+            header = f.read(1024)
+            tokens = []
+            current_token = []
+            in_comment = False
+            for byte in header:
+                char = chr(byte)
+                if char == '\n' and in_comment:
+                    in_comment = False
+                    continue
+                if in_comment:
+                    continue
+                if char == '#':
+                    in_comment = True
+                    continue
+                if char.isspace():
+                    if current_token:
+                        tokens.append("".join(current_token))
+                        current_token = []
+                        if len(tokens) >= 3:
+                            break
+                else:
+                    current_token.append(char)
+            
+            if len(tokens) >= 3 and tokens[0] in ("P1", "P4"):
+                return int(tokens[1]), int(tokens[2])
+    except Exception as e:
+        log(f"Error parsing PBM header: {e}")
+    return None, None
+
 # -------------------------------------------------------------
 # TCP Port 9100 Print Job Receiver and Processor
 # -------------------------------------------------------------
@@ -169,12 +201,34 @@ def handle_client(conn, addr):
             
         log(f"PBM generated: {os.path.getsize(temp_pbm)} bytes.")
         
+        # Detect PBM dimensions to determine the paper size dynamically
+        width, height = get_pbm_dimensions(temp_pbm)
+        paper_size = "9"  # Default to A4 (9)
+        if width and height:
+            log(f"PBM raster dimensions: {width}x{height}")
+            if abs(height - 7016) < 150:
+                paper_size = "9"  # A4 (210 x 297 mm)
+                log("Setting print media to: A4")
+            elif abs(height - 6600) < 150:
+                paper_size = "1"  # Letter (8.5 x 11 in)
+                log("Setting print media to: Letter")
+            elif abs(height - 8400) < 150:
+                paper_size = "3"  # Legal (8.5 x 14 in)
+                log("Setting print media to: Legal")
+            elif abs(height - 4960) < 150:
+                paper_size = "5"  # A5 (148 x 210 mm)
+                log("Setting print media to: A5")
+            else:
+                log(f"Using default page size A4 for height {height}")
+        else:
+            log("Could not parse page dimensions, defaulting media to A4")
+
         # 3. Convert PBM to ZjStream using foo2zjs
         log("Converting PBM to ZjStream...")
         foo_cmd = [
             FOO2ZJS_PATH,
             "-r600x600",
-            "-p1",  # Letter paper
+            f"-p{paper_size}",  # Dynamic paper size
             "-d1",  # Duplex off
             "-P",   # PJL headers
             "-z2",  # ZjStream v2
