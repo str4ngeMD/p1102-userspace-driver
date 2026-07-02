@@ -1,3 +1,5 @@
+> Anyone who can contribute is welcome.
+
 # HP LaserJet Pro P1102 userspace Loopback Print Driver for macOS (Apple Silicon)
 
 This repository contains a lightweight, future-proof userspace translation driver that allows the HP LaserJet Pro P1102 (and other ZjStream-based printers) to print natively on macOS ARM64 (Apple Silicon).
