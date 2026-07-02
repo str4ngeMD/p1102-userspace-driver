@@ -6,18 +6,18 @@
     <string>com.nativehp.p1102-daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/sorce/code/p1102-userspace-driver/venv/bin/python3</string>
-        <string>/Users/sorce/code/p1102-userspace-driver/p1102_daemon.py</string>
+        <string>PATH_TO_DRIVER_DIR/venv/bin/python3</string>
+        <string>PATH_TO_DRIVER_DIR/p1102_daemon.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/sorce/code/p1102-userspace-driver/daemon.log</string>
+    <string>PATH_TO_DRIVER_DIR/daemon.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/sorce/code/p1102-userspace-driver/daemon_error.log</string>
+    <string>PATH_TO_DRIVER_DIR/daemon_error.log</string>
     <key>WorkingDirectory</key>
-    <string>/Users/sorce/code/p1102-userspace-driver</string>
+    <string>PATH_TO_DRIVER_DIR</string>
 </dict>
 </plist>

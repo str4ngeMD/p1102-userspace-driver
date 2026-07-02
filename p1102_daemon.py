@@ -12,8 +12,11 @@ import usb.util
 # Configuration
 PRINTER_VID = 0x03f0
 PRINTER_PID = 0x002a
-FIRMWARE_PATH = "/Users/sorce/code/p1102-userspace-driver/firmware/sihpP1102.dl"
-FOO2ZJS_PATH = "/Users/sorce/code/p1102-userspace-driver/foo2zjs"
+
+# Set paths dynamically relative to this script's directory for maximum portability
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+FIRMWARE_PATH = os.path.join(SCRIPT_DIR, "firmware", "sihpP1102.dl")
+FOO2ZJS_PATH = os.path.join(SCRIPT_DIR, "foo2zjs")
 GS_PATH = "/opt/homebrew/bin/gs"  # Fallback to 'gs' if not found
 
 # Find gs on PATH if not at homebrew path

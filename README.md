@@ -106,7 +106,11 @@ To make the loopback server load on login and run silently in the background:
    ```bash
    cp com.nativehp.p1102-daemon.plist ~/Library/LaunchAgents/
    ```
-2. Register and start the background agent:
+2. Auto-configure the paths in the copied plist file (this replaces the `PATH_TO_DRIVER_DIR` placeholder with your actual repository clone path dynamically):
+   ```bash
+   sed -i '' "s|PATH_TO_DRIVER_DIR|$(pwd)|g" ~/Library/LaunchAgents/com.nativehp.p1102-daemon.plist
+   ```
+3. Register and start the background agent:
    ```bash
    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nativehp.p1102-daemon.plist
    ```
