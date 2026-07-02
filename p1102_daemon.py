@@ -12,7 +12,6 @@ import usb.util
 # Configuration
 PRINTER_VID = 0x03f0
 PRINTER_PID = 0x002a
-RAW_QUEUE_NAME = "HP_LaserJet_P1102_Raw"
 FIRMWARE_PATH = "/Users/sorce/code/p1102-userspace-driver/firmware/sihpP1102.dl"
 FOO2ZJS_PATH = "/Users/sorce/code/p1102-userspace-driver/foo2zjs"
 GS_PATH = "/opt/homebrew/bin/gs"  # Fallback to 'gs' if not found
@@ -28,30 +27,61 @@ def log(msg):
     print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
 # -------------------------------------------------------------
-# USB Monitor & Firmware Auto-Uploader
+# Dynamic USB URI Detection & Direct USB Backend Print Logic
 # -------------------------------------------------------------
-def upload_firmware():
-    if not os.path.exists(FIRMWARE_PATH):
-        log(f"Error: Firmware file not found at {FIRMWARE_PATH}")
+def detect_printer_uri():
+    try:
+        res = subprocess.run(["/usr/libexec/cups/backend/usb"], capture_output=True, text=True)
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if "usb://" in line and ("P1102" in line or "ZJS" in line):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        uri = parts[1]
+                        # Strip surrounding quotes if any
+                        uri = uri.strip('"\'')
+                        return uri
+    except Exception as e:
+        log(f"Error auto-detecting printer USB URI: {e}")
+    return None
+
+def send_raw_data(uri, file_path):
+    if not uri:
+        log("Error: Printer USB URI not detected.")
         return False
     
-    log(f"Uploading firmware '{FIRMWARE_PATH}' to printer queue '{RAW_QUEUE_NAME}'...")
+    env = os.environ.copy()
+    env["DEVICE_URI"] = uri
     try:
-        # Run lp command to print firmware raw
+        # Run CUPS USB backend directly as userspace subprocess
         res = subprocess.run(
-            ["lp", "-d", RAW_QUEUE_NAME, "-o", "raw", FIRMWARE_PATH],
+            ["/usr/libexec/cups/backend/usb", "1", "", "", "1", "", file_path],
+            env=env,
             capture_output=True,
             text=True
         )
         if res.returncode == 0:
-            log("Firmware upload job sent successfully! Printer should initialize (flashing orange/green lights)...")
             return True
         else:
-            log(f"Failed to send firmware job: {res.stderr}")
+            log(f"CUPS USB backend execution failed: {res.stderr}")
             return False
     except Exception as e:
-        log(f"Exception during firmware upload: {e}")
+        log(f"Exception during raw sending: {e}")
         return False
+
+# -------------------------------------------------------------
+# USB Monitor & Firmware Auto-Uploader
+# -------------------------------------------------------------
+def upload_firmware(uri):
+    if not os.path.exists(FIRMWARE_PATH):
+        log(f"Error: Firmware file not found at {FIRMWARE_PATH}")
+        return False
+    
+    log(f"Uploading firmware '{FIRMWARE_PATH}' directly to USB device...")
+    if send_raw_data(uri, FIRMWARE_PATH):
+        log("Firmware upload job sent successfully! Printer should initialize (flashing orange/green lights)...")
+        return True
+    return False
 
 def usb_monitor_thread():
     log("USB Monitor thread started...")
@@ -61,9 +91,11 @@ def usb_monitor_thread():
     try:
         dev = usb.core.find(idVendor=PRINTER_VID, idProduct=PRINTER_PID)
         if dev:
-            log("Printer detected on startup. Triggering initial firmware upload...")
-            upload_firmware()
-            was_connected = True
+            uri = detect_printer_uri()
+            if uri:
+                log(f"Printer detected on startup at {uri}. Triggering initial firmware upload...")
+                upload_firmware(uri)
+                was_connected = True
     except Exception as e:
         log(f"Startup USB check failed: {e}")
 
@@ -73,10 +105,12 @@ def usb_monitor_thread():
             if dev:
                 if not was_connected:
                     log("Printer connection detected!")
-                    # Wait a moment for OS to register device before uploading
+                    # Wait a moment for OS to register device
                     time.sleep(2)
-                    upload_firmware()
-                    was_connected = True
+                    uri = detect_printer_uri()
+                    if uri:
+                        upload_firmware(uri)
+                        was_connected = True
             else:
                 if was_connected:
                     log("Printer disconnected.")
@@ -137,7 +171,7 @@ def handle_client(conn, addr):
         foo_cmd = [
             FOO2ZJS_PATH,
             "-r600x600",
-            "-p1",  # Letter paper (1 is letter, 9 is A4)
+            "-p1",  # Letter paper
             "-d1",  # Duplex off
             "-P",   # PJL headers
             "-z2",  # ZjStream v2
@@ -153,17 +187,16 @@ def handle_client(conn, addr):
             
         log(f"ZJS stream generated: {os.path.getsize(temp_zjs)} bytes.")
         
-        # 4. Push raw ZJS to printer raw queue
-        log(f"Sending ZJS to raw queue '{RAW_QUEUE_NAME}'...")
-        res_lp = subprocess.run(
-            ["lp", "-d", RAW_QUEUE_NAME, "-o", "raw", temp_zjs],
-            capture_output=True,
-            text=True
-        )
-        if res_lp.returncode == 0:
-            log("Print job successfully spooled to printer!")
+        # 4. Push ZJS directly to printer URI via CUPS USB backend
+        uri = detect_printer_uri()
+        if not uri:
+            raise Exception("Failed to print: Printer USB URI not detected.")
+            
+        log(f"Sending ZJS directly to USB printer URI '{uri}'...")
+        if send_raw_data(uri, temp_zjs):
+            log("Print job successfully sent directly to USB printer!")
         else:
-            log(f"Failed to spool print job to raw queue: {res_lp.stderr}")
+            log("Failed to send print job to USB printer.")
             
     except Exception as e:
         log(f"Error handling job: {e}")
