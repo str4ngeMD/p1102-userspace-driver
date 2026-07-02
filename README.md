@@ -48,8 +48,8 @@ python3 -m venv venv
 ./venv/bin/pip install pyusb
 ```
 
-### 3. Compile the `foo2zjs` Binary
-The core printing translator is `foo2zjs`. Since it is written in standard C, we can compile it natively in seconds:
+### 3. Compile the `foo2zjs` Binary (OPTIONAL - Pre-compiled ARM64 binary included)
+The core printing translator is `foo2zjs`. Since it is written in standard C, you can compile it natively in seconds if you wish to rebuild it (a pre-compiled native Apple Silicon binary is already included in the root of this repository):
 ```bash
 # Clone the open-source driver suite repository
 git clone https://github.com/OpenPrinting/foo2zjs.git foo2zjs-src
@@ -63,8 +63,8 @@ cp foo2zjs ../foo2zjs
 cd ..
 ```
 
-### 4. Fetch the Volatile Firmware File
-The LaserJet P1102 lacks a flash chip for its engine firmware and loads it into volatile RAM every time it boots. You can extract this file directly from any Linux machine/VM with HPLIP installed:
+### 4. Fetch the Volatile Firmware File (OPTIONAL - Firmware included)
+The LaserJet P1102 lacks a flash chip for its engine firmware and loads it into volatile RAM every time it boots. A copy of this firmware file (`sihpP1102.dl`) is already included in the `firmware/` directory of this repository. If you ever need to extract or refresh it yourself from a Linux machine/VM with HPLIP installed:
 
 1. Locate the file on your Linux VM:
    `/usr/share/hplip/data/firmware/hp_laserjet_professional_p1102.fw.gz`
@@ -104,15 +104,67 @@ To make the loopback server load on login and run silently in the background:
 
 1. Copy the plist configuration to your user's LaunchAgents directory:
    ```bash
-   cp com.nativehp.p1102-daemon.plist ~/Library/LaunchAgents/
+   cp com.str4ngemd.p1102-daemon.plist ~/Library/LaunchAgents/
    ```
 2. Auto-configure the paths in the copied plist file (this replaces the `PATH_TO_DRIVER_DIR` placeholder with your actual repository clone path dynamically):
    ```bash
-   sed -i '' "s|PATH_TO_DRIVER_DIR|$(pwd)|g" ~/Library/LaunchAgents/com.nativehp.p1102-daemon.plist
+   sed -i '' "s|PATH_TO_DRIVER_DIR|$(pwd)|g" ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
    ```
 3. Register and start the background agent:
    ```bash
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nativehp.p1102-daemon.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
    ```
 
-You are all set! The background daemon will handle the printer automatically from now on.
+---
+
+## Debugging & Monitoring
+
+If you encounter issues, you can monitor the background daemon logs or restart the service:
+
+### 1. View Logs
+The daemon redirects output and errors directly to the repository folder:
+```bash
+# View startup logs, USB detection, and print job translations
+tail -f daemon.log
+
+# View errors or exceptions
+tail -f daemon_error.log
+```
+
+### 2. Relaunching the Daemon
+If you edit the script or need to force-reload the background service:
+```bash
+# Force-restart the running LaunchAgent
+launchctl kickstart -k gui/$(id -u)/com.str4ngemd.p1102-daemon
+```
+
+---
+
+## Uninstallation
+
+To completely remove the userspace print driver and clean up your system:
+
+### 1. Stop and Remove the Background Service
+```bash
+# Unload the LaunchAgent
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
+
+# Delete the plist file
+rm ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
+```
+
+### 2. Remove the CUPS Printer Queue
+```bash
+sudo lpadmin -x HP_LaserJet_P1102
+```
+
+### 3. Clean Up Project files
+```bash
+# Remove virtual environment and log files
+rm -rf venv daemon.log daemon_error.log
+```
+
+### 4. Optional: Uninstall Homebrew Packages (if not used elsewhere)
+```bash
+brew uninstall ghostscript libusb
+```

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nativehp.p1102-daemon</string>
+    <string>com.str4ngemd.p1102-daemon</string>
     <key>ProgramArguments</key>
     <array>
         <string>PATH_TO_DRIVER_DIR/venv/bin/python3</string>
