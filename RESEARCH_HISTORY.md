@@ -82,69 +82,84 @@ We create a standard user-facing print queue in CUPS configured to point to a lo
 When you click "Print":
 1. CUPS formats the document as standard PostScript/PDF.
 2. CUPS opens a TCP connection to `127.0.0.1:9100` and dumps the PostScript data.
-3. The background print daemon (`p1102_daemon.py`), running in the user space (fully outside the CUPS sandbox), receives the PostScript data.
+3. The background print daemon (`p1102_daemon.py` in *v1* branch of this repo), running in the user space (fully outside the CUPS sandbox), receives the PostScript data.
 4. The daemon runs `gs` and `foo2zjs` (compiled natively for ARM64) to rasterize the PostScript to PBM and encode it to ZjStream.
 5. The daemon pipes the output to the physical USB printer.
 
 This approach means zero security modifications or library hackery are needed!
 
-### Phase 3: The Direct USB Backend Breakthrough (Final Solution)
-Initially, to send the generated ZJS file to the physical USB port, we registered a second "Raw Queue" in CUPS (`HP_LaserJet_P1102_Raw`) and spooled jobs to it using `lp -d HP_LaserJet_P1102_Raw -o raw`. 
-* *Issue*: This raw queue appeared in the macOS Print Dialogs, cluttering the UI and confusing users who tried to print to it.
+### Phase 3: The Direct USB Backend Breakthrough (Obsolete Network Solution)
+Initially, to send the generated ZJS file to the physical USB port without sandbox issues, we ran a loopback network server daemon on port 9100. It converted the spooled job to ZJS, and then called macOS's built-in CUPS USB backend `/usr/libexec/cups/backend/usb` to write the raw stream directly to the printer.
+* *Issue*: This still required a running background server, python packages (like `pyusb`), and a custom Netpbm/Ghostscript translation layer.
 
-We resolved this by directly calling macOS's built-in CUPS USB backend:
-`/usr/libexec/cups/backend/usb`
+### Phase 4: The 100% Native, Direct CUPS Raster Filter (Ultimate Solution)
+Instead of bypassing the CUPS sandbox with a loopback TCP socket server and running a heavy Ghostscript rasterizer, we integrated directly into the CUPS printing pipeline natively:
 
-When executed directly as a user subprocess with the target `DEVICE_URI` environment variable, the backend opens the USB channel, claims the printer interface, and writes raw data directly to the printer.
-
-This eliminates:
-1. **The Raw Queue**: No secondary printer queues are registered in CUPS.
-2. **The custom `raw.ppd`**: Only our local `generic.ppd` is required.
-3. **Hardcoded Device URIs**: The daemon runs the USB backend at startup to dynamically detect the connected printer's URI, supporting any USB port or serial number out-of-the-box.
+1. **Native CUPS Raster Format:** We patched the official `foo2zjs.c` driver to parse the standard `application/vnd.cups-raster` format. Since macOS's built-in CUPS system natively converts PDFs and PostScript to raw raster scanlines, our custom filter (`rastertozjs`) does not need Ghostscript!
+2. **Apple Silicon Native Compilation:** We compiled the patched driver natively as an ARM64 binary. By linking *only* to macOS's core `libcups.dylib` and `libSystem.dylib`, the binary is 100% sandbox-compliant and has zero third-party/Homebrew dependencies.
+3. **No Active Servers:** The print queue directly calls `/Library/Printers/foo2zjs/filter/rastertozjs`, which converts the stream and pipes the raw ZjStream output to the printer natively.
 
 ---
 
-## 4. Translation Logic: Duplex, Page Sizes, and Relayed Data
+## 4. Translation Logic: Options, Page Sizes, and Resolution
 
-Understanding what is dynamically relayed from the client application versus what is statically configured in the daemon is essential for maintenance:
+With the Phase 4 native architecture, all printing parameters are parsed dynamically inside the C filter (`rastertozjs`) from the CUPS Raster page header and options string (`argv[4]`), matching the printer's physical hardware:
 
 ### A. How Duplex Printing is Handled
-The HP LaserJet Pro P1102 does **not** have automatic hardware duplexing capabilities (automatic duplexing is only supported on HP's `d`-suffixed models like the P1606dn). It only supports **manual duplexing**.
-
-On macOS, manual duplexing is managed entirely at the application and OS level:
-1. macOS prints the odd pages first.
-2. The OS prompts you with a dialog saying: *"Please take the printed pages, rotate/flip them, put them back into the tray, and click Resume."*
-3. macOS then sends the even pages.
-
-Because of this, the print daemon does not need to send hardware duplex commands to the printer. Hardcoding `-d1` (Duplex Off) in `foo2zjs` is correct and prevents the printer engine from throwing an error.
+The HP LaserJet Pro P1102 does **not** have automatic hardware duplexing. It only supports **manual duplexing**. Manual duplexing is managed entirely at the OS level by the macOS print spooler itself, sending print pages as separate simplex jobs. 
+* To prevent the printer engine from throwing an error, our C filter hardcodes the monochrome plane offset to `OutputStartPlane = 0` (monochrome mode) instead of Plane 4 (color-black mode), which was causing the firmware to panic and reboot.
 
 ### B. Auto-Detecting Paper Size (Letter vs. A4)
-To support multiple paper formats without hardcoding a single size, the daemon dynamically inspects the Netpbm bitmap header (`P4`) of the generated print job at runtime to extract the exact width and height of the rasterized pages. It then sets the `foo2zjs` `-p` parameter accordingly:
+Instead of analyzing Netpbm headers, the C filter reads the exact page dimensions (`cupsWidth` and `cupsHeight`) and paper type parameters (`header.cupsPageSize`) dynamically from the CUPS Raster stream. These are converted to standard ZJS dimensions, maintaining perfect alignment for Letter, A4, A5, and Legal.
 
-* **Height ~7016 px**: Setting print media to **A4** (`-p9`) — *default fallback size*.
-* **Height ~6600 px**: Setting print media to **Letter** (`-p1`).
-* **Height ~8400 px**: Setting print media to **Legal** (`-p3`).
-* **Height ~4960 px**: Setting print media to **A5** (`-p5`).
+### C. Resolution and Gray Richness (600 DPI vs. 1200 DPI)
+* The PPD defines two hardware-supported modes: `600x600 DPI` (1 Bit Per Pixel) and `1200x600 DPI` (2 Bits Per Pixel).
+* When printing at `1200x600 DPI`, the filter receives `ResX = 1200`. The C code dynamically computes `Bpp = ResX / 600 = 2` (2 Bits Per Pixel) and sets the horizontal resolution to `600`, which activates the printer's hardware-based **HP REt (Resolution Enhancement technology)** pulse-width modulation. The laser fires for fractions of a pixel width (yielding 4 gray states: off, 1/3, 2/3, and full duration) to print smooth diagonals and rich gray gradients.
 
-This ensures that whatever size is configured in the macOS Print Dialog (A4, Letter, etc.) is perfectly translated and aligned on the printed page.
+### D. Parameter Mapping
 
-### C. What the Daemon Relays vs. Hardcodes
-
-| Parameter | Type | Details |
+| Parameter | Source / Type | Details |
 | :--- | :--- | :--- |
-| **Document Content** | **Relayed** | The actual visual pages, text, and graphics generated by your Mac applications. |
-| **Page Count** | **Relayed** | The daemon handles whatever page numbers/count the application sends to the loopback. |
-| **Page Dimensions** | **Relayed** | Extracted dynamically from the rendered PBM file to support A4, Letter, Legal, and A5. |
-| **Duplex Mode (`-d1`)** | **Hardcoded** | Hardcoded to `1` (off) since the P1102 only supports manual OS-level duplexing. |
-| **Resolution (`-r600x600`)** | **Hardcoded** | Set to `600x600` dpi, matching the native hardware capabilities of the P1102 engine. |
-| **Protocol Version (`-z2`)** | **Hardcoded** | Set to ZjStream version 2, which is the exact version of the wire protocol expected by this printer model's firmware. |
-| **PJL Headers (`-P`)** | **Hardcoded** | Injects standard HP Printer Job Language headers required by the printer controller to parse the stream. |
+| **DPI Resolution** | **Dynamic** | Extracted from `HWResolution`. Translates `1200 DPI` to `Bpp=2` and `600 DPI` to `Bpp=1` dynamically. |
+| **Toner Saving / Draft** | **Dynamic** | Parsed from print options. Sets PJL `@PJL SET ECONOMODE=ON` and ZJ command `ZJI_ECONOMODE=1`. |
+| **Toner Density (1-5)** | **Dynamic** | Parsed from print options. Injects PJL `@PJL SET DENSITY=[1-5]`. |
+| **Paper Tray / Source** | **Dynamic** | Maps PPD `InputSlot` values (Auto, Manual, Upper) to standard ZJS tray codes dynamically. |
+| **Paper Type / Media** | **Dynamic** | Maps PPD `MediaType` values (Envelope, Labels, Cardstock) to corresponding ZJS fuser codes dynamically. |
 
 ---
 
 ## 5. Key Lessons for Developers
 
-* **USB Interface Locking**: macOS locks Class 7 (USB Printer) interfaces. Standard PyUSB scripts cannot claim the interface to write raw data unless you detach the kernel class driver, which is restricted on Apple Silicon. Using the OS's own `/usr/libexec/cups/backend/usb` solves this securely.
-* **Firmware Timing**: The LaserJet P1102 flashes its orange/green status lights for ~5 seconds while loading firmware. The printer will ignore any print jobs sent during this initialization period. The daemon handles this by separating firmware upload checks from print job processing.
-* **PostScript Translation**: Since macOS handles PostScript natively, routing the print job through a loopback socket using a Generic PostScript PPD ensures that macOS does all the layout rendering and outputs standard PostScript. The daemon only needs to perform rasterization (PS -> PBM) and compression (PBM -> ZJS).
+* **Avoiding Ghostscript Sandboxing**: Instead of running a complex loopback server or bundling a heavy `gs` binary to escape sandbox blocks, we bypass Ghostscript entirely by reading standard `vnd.cups-raster` scanlines generated natively by macOS.
+* **PJL Job Wrappers**: ZJS print streams must be wrapped in standard PJL envelopes (`start_doc()` and `end_doc()`). Failing to print these envelopes causes the printer controller to ignore the job.
+* **Unified Diagnostic Logs**: CUPS redirects the `stderr` streams of all filters and backends to `/var/log/cups/error_log`. We can passively tail this file in Python without needing root privileges, providing a unified real-time console stream of USB connections and print jobs side-by-side.
+
+---
+
+## 6. PPD Origin and Custom Patching
+
+For developers wondering where [HP_LaserJet_Professional_P1102.ppd](file:///Users/sorce/code/p1102-userspace-driver/HP_LaserJet_Professional_P1102.ppd) came from:
+
+### 1. Upstream PPD Origin
+The original PPD templates are stored in the upstream repository at [github.com/OpenPrinting/foo2zjs/tree/main-fixes/PPD](https://github.com/OpenPrinting/foo2zjs/tree/main-fixes/PPD).
+
+> In the official `foo2zjs` package, PPD files were built dynamically by the suite's makefiles. When you run `make`, a tool called `foomatic-db-engine` parses their XML source templates (like `PPD/HP-LaserJet_Professional_P1102.ppd.in`) and compiles them into final `.ppd` files. 
+
+> The resulting pre-compiled PPD is designed for the legacy foomatic stack, calling a Perl wrapper script to render PostScript files via Ghostscript:
+> ```text
+> *cupsFilter: "application/vnd.cups-postscript 100 foomatic-rip"
+> ```
+
+### 2. Our Manual Modifications (The Patches)
+For this project, we took that pre-compiled foomatic PPD and **manually edited and cleaned it** to integrate directly with our native C filter:
+
+* **Redirected the filter pipeline:** We changed the filter definition to point directly to our native binary, asking CUPS to render files to raster scanlines first:
+  ```diff
+  - *cupsFilter: "application/vnd.cups-postscript 100 foomatic-rip"
+  + *cupsFilter: "application/vnd.cups-raster 0 rastertozjs"
+  ```
+* **Bypassed foomatic comments:** Original parameters (Resolution, Paper Source, Paper Type) were declared inside foomatic-specific XML comment tags. We deleted those blocks and replaced them with standard PostScript dictionary entries (e.g. `<</HWResolution[600 600]>>setpagedevice`), allowing macOS's print system to read the options directly.
+* **Resolved 100 DPI fallback:** We replaced the foomatic-specific resolution comment options with a standard CUPS UI PickOne group (declaring `600x600dpi` and `1200x600dpi`), preventing macOS from falling back to 100 DPI and causing division-by-zero crashes.
+
+
 

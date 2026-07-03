@@ -3,21 +3,19 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.str4ngemd.p1102-daemon</string>
+    <string>com.nativehp.p1102-fw-uploader</string>
     <key>ProgramArguments</key>
     <array>
-        <string>PATH_TO_DRIVER_DIR/venv/bin/python3</string>
-        <string>PATH_TO_DRIVER_DIR/p1102_daemon.py</string>
+        <string>/Users/sorce/code/hplipmaybe/venv/bin/python3</string>
+        <string>/Library/Printers/foo2zjs/bin/p1102_fw_uploader.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>PATH_TO_DRIVER_DIR/daemon.log</string>
+    <string>/Library/Printers/foo2zjs/bin/fw_uploader.log</string>
     <key>StandardErrorPath</key>
-    <string>PATH_TO_DRIVER_DIR/daemon_error.log</string>
-    <key>WorkingDirectory</key>
-    <string>PATH_TO_DRIVER_DIR</string>
+    <string>/Library/Printers/foo2zjs/bin/fw_uploader.err</string>
 </dict>
 </plist>

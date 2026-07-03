@@ -1,0 +1,184 @@
+diff --git a/foo2zjs.c b/foo2zjs.c
+--- a/foo2zjs.c
++++ b/foo2zjs.c
+@@ -79,4 +79,7 @@
+ #include <stdarg.h>
+ #include <time.h>
++#include <fcntl.h>
++#include <cups/cups.h>
++#include <cups/raster.h>
+ #include "jbig.h"
+ #include "zjs.h"
+@@ -1777,2 +1780,80 @@
+ }
+ 
++void
++do_cups_raster(int fd)
++{
++    cups_raster_t       *ras;
++    cups_page_header2_t header;
++    int                 doc_started = 0;
++
++    OutputStartPlane = 0;
++
++    ras = cupsRasterOpen(fd, CUPS_RASTER_READ);
++    if (!ras)
++    {
++        fprintf(stderr, "ERROR: rastertozjs: cannot open raster stream\n");
++        exit(1);
++    }
++
++    while (cupsRasterReadHeader2(ras, &header))
++    {
++        int w = header.cupsWidth;
++        int h = header.cupsHeight;
++        int bpl = (w + 7) / 8;
++        int bpl16;
++        unsigned char *buf;
++        unsigned int y;
++        int invert;
++
++        // Map CUPS parameters to foo2zjs variables
++        PageWidth = w;
++        PageHeight = h;
++        ResX = header.HWResolution[0];
++        ResY = header.HWResolution[1];
++        
++        if (Model == MODEL_HP1020 || Model == MODEL_HP_PRO || Model == MODEL_HP_PRO_CP)
++        {
++            Bpp = ResX / 600;
++            ResX = 600;
++        }
++
++        if (!doc_started)
++        {
++            start_doc(stdout);
++            doc_started = 1;
++        }
++
++        switch (Model)
++        {
++        case MODEL_2300DL:    bpl16 = bpl; break;
++        case MODEL_HP1020:    bpl16 = (bpl + 15) & ~15; break;
++        case MODEL_HP_PRO:    bpl16 = (bpl + 15) & ~15; break;
++        case MODEL_HP_PRO_CP: bpl16 = (bpl + 15) & ~15; break;
++        default:              bpl16 = (bpl + 15) & ~15; break;
++        }
++
++        buf = calloc(bpl16, h);
++        if (!buf)
++        {
++            fprintf(stderr, "ERROR: rastertozjs: cannot allocate page buffer\n");
++            break;
++        }
++
++        for (y = 0; y < h; y++)
++        {
++            unsigned int n = cupsRasterReadPixels(ras, buf + (size_t)y * bpl16, header.cupsBytesPerLine);
++            if (n == 0) break;
++        }
++
++        // Invert pixels if the raster is inverted DeviceGray (1=white) instead of DeviceK (1=black)
++        invert = (header.cupsColorSpace == CUPS_CSPACE_W);
++        if (invert)
++        {
++            unsigned int i;
++            for (i = 0; i < bpl16 * h; i++)
++                buf[i] ^= 0xFF;
++        }
++
++        PageNum++;
++        pbm_page(buf, w, h, stdout);
++        free(buf);
++    }
++    if (doc_started)
++        end_doc(stdout);
++    cupsRasterClose(ras);
++}
++
+ int
+@@ -1859,2 +1940,76 @@
+     if (getenv("DEVICE_URI"))
+ 	IsCUPS = 1;
+ 
++    if (IsCUPS)
++    {
++        int fd = 0;
++        Model = MODEL_HP_PRO; // Default for P1102 PPD
++        
++        if (argc >= 5)
++        {
++            cups_option_t *opts = NULL;
++            int num_opts = cupsParseOptions(argv[4], 0, &opts);
++            const char *val;
++            
++            val = cupsGetOption("Density", num_opts, opts);
++            if (val)
++            {
++                int d = atoi(val);
++                if (d >= 1 && d <= 5) PrintDensity = d;
++            }
++            
++            val = cupsGetOption("Quality", num_opts, opts);
++            if (val && strcmp(val, "draft") == 0) EconoMode = 1;
++            
++            val = cupsGetOption("EconoMode", num_opts, opts);
++            if (val && strcmp(val, "on") == 0) EconoMode = 1;
++            
++            val = cupsGetOption("Model", num_opts, opts);
++            if (val)
++            {
++                int m = atoi(val);
++                if (m >= 0 && m <= MODEL_LAST) Model = m;
++            }
++            
++            val = cupsGetOption("InputSlot", num_opts, opts);
++            if (val)
++            {
++                if (strcmp(val, "Upper") == 0) SourceCode = 1;
++                else if (strcmp(val, "Middle") == 0) SourceCode = 3;
++                else if (strcmp(val, "Lower") == 0) SourceCode = 2;
++                else if (strcmp(val, "Auto") == 0) SourceCode = 7;
++                else if (strcmp(val, "Envelope") == 0) SourceCode = 5;
++                else if (strcmp(val, "Manual") == 0) SourceCode = 4;
++            }
++            
++            val = cupsGetOption("MediaType", num_opts, opts);
++            if (val)
++            {
++                if (strcmp(val, "Bond") == 0) MediaCode = 260;
++                else if (strcmp(val, "Color") == 0) MediaCode = 512;
++                else if (strcmp(val, "Envelope") == 0) MediaCode = 267;
++                else if (strcmp(val, "ExtraHeavy") == 0) MediaCode = 283;
++                else if (strcmp(val, "Heavy") == 0) MediaCode = 262;
++                else if (strcmp(val, "Labels") == 0) MediaCode = 265;
++                else if (strcmp(val, "Letterhead") == 0) MediaCode = 513;
++                else if (strcmp(val, "Light") == 0) MediaCode = 258;
++                else if (strcmp(val, "Medium") == 0) MediaCode = 282;
++                else if (strcmp(val, "Preprinted") == 0) MediaCode = 514;
++                else if (strcmp(val, "Prepunched") == 0) MediaCode = 515;
++                else if (strcmp(val, "Recycled") == 0) MediaCode = 516;
++                else if (strcmp(val, "Rough") == 0) MediaCode = 263;
++                else if (strcmp(val, "Standard") == 0) MediaCode = 1;
++                else if (strcmp(val, "ThickStock") == 0) MediaCode = 261;
++                else if (strcmp(val, "Transparency") == 0) MediaCode = 2;
++                else if (strcmp(val, "Vellum") == 0) MediaCode = 273;
++            }
++            
++            cupsFreeOptions(num_opts, opts);
++        }
++        
++        if (argc == 6)
++        {
++            fd = open(argv[5], O_RDONLY);
++            if (fd < 0)
++            {
++                fprintf(stderr, "ERROR: rastertozjs: cannot open %s\n", argv[5]);
++                exit(1);
++            }
++        }
++        
++        do_cups_raster(fd);
++        if (fd != 0) close(fd);
++        exit(0);
++    }

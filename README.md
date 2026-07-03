@@ -1,176 +1,132 @@
-> Anyone who can contribute is welcome. \
-> read RESEARCH_HISTORy.md for details. 
-> 
-> This is not yet a turnkey solution. \
-> I hope either I or someone else can make this very easy to install/use for normal people, in the future.
+# HP LaserJet Pro P1102 Native Driver & Firmware Uploader for macOS (Apple Silicon ARM64)
 
-# HP LaserJet Pro P1102 userspace Loopback Print Driver for macOS (Apple Silicon)
+This repository contains the files and instructions for a **100% native, sandbox-friendly, zero-server** print driver and firmware uploader for the **HP LaserJet Pro P1102** running on macOS Apple Silicon (ARM64). 
 
-This repository contains a lightweight, future-proof userspace translation driver that allows the HP LaserJet Pro P1102 (and other ZjStream-based printers) to print natively on macOS ARM64 (Apple Silicon).
-
-It completely bypasses the macOS CUPS sandbox restrictions and kernel-level USB interface locking without needing custom PPD hacks or SIP/security bypasses.
+It completely bypasses the macOS CUPS sandbox restrictions and kernel-level USB interface locking without needing custom loopback network daemons, external Ghostscript runtimes, or disabling System Integrity Protection (SIP).
 
 ---
 
 ## How It Works
 
 ```
-[Mac Apps] --> [CUPS User Queue] (Loopback Socket)
-                     |
-                     v (socket://127.0.0.1:9100)
-             [p1102_daemon.py] (Userspace Translation Loop)
-                     |
-                     +---> Converts PS/PDF to PBM (via Ghostscript)
-                     +---> Encodes PBM to ZJS (via foo2zjs)
-                     |
-                     v (Subprocess execution)
-             [/usr/libexec/cups/backend/usb] (Direct USB transmission)
-                     |
-                     v
-             [P1102 Printer] (USB)
+[Mac Applications] ➔ [CUPS Print Spooler]
+                            | (Natively renders PDF to Raster)
+                            v
+           [/Library/Printers/foo2zjs/filter/rastertozjs] (Native Filter)
+                            | (Reads CUPS Raster, compresses to ZjStream)
+                            v
+           [/usr/libexec/cups/backend/usb] (Direct USB Transmission)
+                            |
+                            v
+                      [P1102 Printer] (USB)
 ```
 
-1. **Auto-Firmware Upload**: The daemon monitors the USB bus. When you turn on the printer, it dynamically detects the printer's USB URI and automatically uploads the volatile firmware file `sihpP1102.dl` directly to the USB device.
-2. **Translation Bridge**: When you print, macOS formats the pages as standard PostScript and sends them to our local socket server on port 9100. The daemon converts it to ZJS using userspace programs (`gs` and `foo2zjs`) and pipes the raw ZJS data directly to the USB printer via the system's USB backend.
-
-*Note: Since the daemon writes directly to the USB port by invoking macOS's built-in CUPS USB backend, **you do not need a Raw Printer Queue or raw PPD files**. Only the single, user-facing print queue is registered on your Mac!*
+1. **No External Rasterizer (Bypasses Ghostscript):** Instead of executing Homebrew Ghostscript (`gs`) to perform rasterization (which is blocked by the CUPS sandbox), our native filter binary `rastertozjs` reads the standard `application/vnd.cups-raster` stream generated natively by macOS. It is a single, lightweight C executable (20KB) linking only to the core macOS system libraries (`libcups.2.dylib` and `libSystem.B.dylib`).
+2. **Dynamic Parameter Mapping:** Resolves resolution (600 DPI vs. 1200 DPI), toner density (1–5), toner saving (EconoMode/Draft), input paper tray selection, and media paper type (labels, envelopes, cardstock) dynamically from standard print dialog settings.
+3. **Passive Hotplug Daemon (`p1102_fw_uploader.py`):** The LaserJet P1102 stores its firmware in volatile memory and expects a firmware upload (`sihpP1102.dl`) every time it boots. The Python daemon runs passively, detects when the printer is connected to a USB port, uploads the firmware once, and then sleeps. 
+4. **Unified Log Consolidation:** The daemon tails `/var/log/cups/error_log` in real-time, pulling filter progress and USB print events into a single, unified logging stream for easy diagnostics.
 
 ---
 
-## Step-by-Step Installation (For a Fresh Machine)
+## File Manifest
 
-### 1. Install System Dependencies
-Install Homebrew if not already installed, then fetch standard compiler tools, Ghostscript, and libusb:
-```bash
-# Install Homebrew dependencies
-brew install ghostscript libusb
-```
-
-### 2. Set Up the Project Environment
-Navigate to this directory and create a Python virtual environment to manage USB monitoring:
-```bash
-# Create local virtualenv
-python3 -m venv venv
-./venv/bin/pip install pyusb
-```
-
-### 3. Compile the `foo2zjs` Binary (OPTIONAL - Pre-compiled ARM64 binary included)
-The core printing translator is `foo2zjs`. Since it is written in standard C, you can compile it natively in seconds if you wish to rebuild it (a pre-compiled native Apple Silicon binary is already included in the root of this repository):
-```bash
-# Clone the open-source driver suite repository
-git clone https://github.com/OpenPrinting/foo2zjs.git foo2zjs-src
-
-# Compile the foo2zjs utility
-cd foo2zjs-src
-make foo2zjs
-
-# Copy the compiled binary back to the root of this folder
-cp foo2zjs ../foo2zjs
-cd ..
-```
-
-### 4. Fetch the Volatile Firmware File (OPTIONAL - Firmware included)
-The LaserJet P1102 lacks a flash chip for its engine firmware and loads it into volatile RAM every time it boots. A copy of this firmware file (`sihpP1102.dl`) is already included in the `firmware/` directory of this repository. If you ever need to extract or refresh it yourself from a Linux machine/VM with HPLIP installed:
-
-1. Locate the file on your Linux VM:
-   `/usr/share/hplip/data/firmware/hp_laserjet_professional_p1102.fw.gz`
-2. Copy it to your Mac:
-   ```bash
-   scp user@linux-vm-ip:/usr/share/hplip/data/firmware/hp_laserjet_professional_p1102.fw.gz ./firmware/
-   ```
-3. Decompress the file and rename it to `sihpP1102.dl`:
-   ```bash
-   cd firmware
-   gunzip -k hp_laserjet_professional_p1102.fw.gz
-   mv hp_laserjet_professional_p1102.fw sihpP1102.dl
-   cd ..
-   ```
-*(Note: HPLIP's `.fw` format is already formatted with the HP PJL/ACL header, making it identical in contents to the `.dl` file).*
-
-### 5. Create the CUPS Print Queue
-Create the printer queue that you will print to from your Mac applications. This queue uses our local Generic PostScript PPD and points to our loopback socket server:
-```bash
-sudo lpadmin -p HP_LaserJet_P1102 -E -v "socket://127.0.0.1:9100" -P generic.ppd
-```
+* [README.md](README.md) - This document.
+* [RESEARCH_HISTORY.md](RESEARCH_HISTORY.md) - Context and reverse engineering notes.
+* [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture layout.
+* [DPI_AND_HALFTONING.md](DPI_AND_HALFTONING.md) - Technical explanation of resolutions (600/1200 DPI) and 2-bit laser pulse-width modulation.
+* [COMPARISON.md](COMPARISON.md) - Table mapping driver features and custom PPD options.
+* [foo2zjs_cups.patch](foo2zjs_cups.patch) - The clean git patch file applied to the official `foo2zjs.c` driver source to support CUPS raster input.
+* [rastertozjs](rastertozjs) - Natively compiled Apple Silicon filter binary.
+* [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd) - PPD printer description file containing resolution and tray options mapping directly to our filter.
+* [p1102_fw_uploader.py](p1102_fw_uploader.py) - USB monitor and log consolidator.
+* [com.nativehp.p1102-fw-uploader.plist](com.nativehp.p1102-fw-uploader.plist) - launchd system agent config file.
+* `firmware/sihpP1102.dl` - The P1102 firmware file.
 
 ---
 
-## Running the Daemon
+## Installation
 
-### Manual Verification
-Run the daemon script in your terminal to verify everything works:
+### Step 1: Install System Folders & Binaries
+Copy the compiled filter binary to the standard CUPS filter path:
 ```bash
-./venv/bin/python3 p1102_daemon.py
+# Create filter and bin directories
+sudo mkdir -p /Library/Printers/foo2zjs/filter/
+sudo mkdir -p /Library/Printers/foo2zjs/bin/
+sudo mkdir -p /Library/Printers/foo2zjs/firmware/
+
+# Copy the native filter binary
+sudo cp rastertozjs /Library/Printers/foo2zjs/filter/rastertozjs
+sudo chown root:wheel /Library/Printers/foo2zjs/filter/rastertozjs
+sudo chmod 0555 /Library/Printers/foo2zjs/filter/rastertozjs
 ```
-* **Verify firmware upload**: Connect or turn on your printer. The daemon output will dynamically log `Printer connection detected!`, identify the USB URI, and send the firmware file. The printer's green/orange lights will flash for 5 seconds as it initializes.
-* **Verify printing**: Print a document from any native app (like Preview, Safari, Word) selecting the `HP_LaserJet_P1102` printer. The daemon will convert the job and print it instantly.
 
-### Automatic Startup (Launchd Agent)
-To make the loopback server load on login and run silently in the background:
+### Step 2: Install the custom PPD
+Deploy the PPD file so macOS can pair it automatically when the printer is connected:
+```bash
+sudo cp HP_LaserJet_Professional_P1102.ppd /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
+sudo chown root:wheel /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
+sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
+```
 
-1. Copy the plist configuration to your user's LaunchAgents directory:
+### Step 3: Install the Firmware & Hotplug Daemon
+1. Create a Python virtual environment to manage dependencies:
    ```bash
-   cp com.str4ngemd.p1102-daemon.plist ~/Library/LaunchAgents/
+   python3 -m venv venv
+   ./venv/bin/pip install pyusb
    ```
-2. Auto-configure the paths in the copied plist file (this replaces the `PATH_TO_DRIVER_DIR` placeholder with your actual repository clone path dynamically):
+2. Copy the uploader daemon, firmware, and plist files to their target paths:
    ```bash
-   sed -i '' "s|PATH_TO_DRIVER_DIR|$(pwd)|g" ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
+   # Copy the script
+   sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs/bin/p1102_fw_uploader.py
+   sudo chmod 0755 /Library/Printers/foo2zjs/bin/p1102_fw_uploader.py
+
+   # Copy the firmware
+   sudo cp firmware/sihpP1102.dl /Library/Printers/foo2zjs/firmware/sihpP1102.dl
+
+   # Copy the launchd agent (replaces the old socket daemon plist)
+   cp com.nativehp.p1102-fw-uploader.plist ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
    ```
-3. Register and start the background agent:
+3. Load the launchd background agent:
    ```bash
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
+   launchctl load ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
    ```
 
 ---
 
-## Debugging & Monitoring
+## Dynamic Verification & Logging
 
-If you encounter issues, you can monitor the background daemon logs or restart the service:
-
-### 1. View Logs
-The daemon redirects output and errors directly to the repository folder:
-```bash
-# View startup logs, USB detection, and print job translations
-tail -f daemon.log
-
-# View errors or exceptions
-tail -f daemon_error.log
-```
-
-### 2. Relaunching the Daemon
-If you edit the script or need to force-reload the background service:
-```bash
-# Force-restart the running LaunchAgent
-launchctl kickstart -k gui/$(id -u)/com.str4ngemd.p1102-daemon
-```
+1. **Clean Boot Test:** Power-cycle the printer completely (unplug both power and USB, wait 10 seconds, then plug back in and turn on).
+2. **Auto-Recognition:** macOS will automatically detect the USB printer and create the printer queue using our custom `HP LaserJet Pro P1102 Native` driver!
+3. **Consolidated Log Viewing:** You can tail the uploader daemon log in real-time to watch USB events and print jobs together:
+   ```bash
+   tail -f /Library/Printers/foo2zjs/bin/fw_uploader.log
+   ```
+   When you send a job, the logs will dynamically stream the entire pipeline:
+   ```text
+   [2026-07-03 18:58:12] Starting HP LaserJet P1102 USB Uploader & Monitor Daemon...
+   [2026-07-03 18:58:12] Monitoring CUPS error log at /var/log/cups/error_log for P1102 print jobs...
+   [2026-07-03 18:58:12] Uploading firmware '/Library/Printers/foo2zjs/firmware/sihpP1102.dl' to device URI 'usb://Hewlett-Packard/HP%20LaserJet%20Professional%20P1102?serial=...'...
+   [2026-07-03 18:58:19] Firmware upload successful. Printer should boot up.
+   [CUPS] [Job 52] Started filter /Library/Printers/foo2zjs/filter/rastertozjs (PID 98176)
+   [CUPS] [Job 52] rastertozjs: Start Document (Model=2 Density=3 EconoMode=1 InputSlot=7 MediaType=1)
+   [CUPS] [Job 52] rastertozjs: Processing Page 1 (4769 x 6828 @ 600 x 600 DPI)
+   [CUPS] [Job 52] rastertozjs: Finished Page 1
+   [CUPS] [Job 52] rastertozjs: End Document
+   [CUPS] [Job 52] Sent 1358 bytes...
+   [CUPS] [Job 52] Job completed.
+   ```
 
 ---
 
-## Uninstallation
+## Uninstall
 
-To completely remove the userspace print driver and clean up your system:
-
-### 1. Stop and Remove the Background Service
+To completely remove the native print driver:
 ```bash
-# Unload the LaunchAgent
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
+# Unload and delete launchd agent
+launchctl unload ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
+rm ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
 
-# Delete the plist file
-rm ~/Library/LaunchAgents/com.str4ngemd.p1102-daemon.plist
-```
-
-### 2. Remove the CUPS Printer Queue
-```bash
-sudo lpadmin -x HP_LaserJet_P1102
-```
-
-### 3. Clean Up Project files
-```bash
-# Remove virtual environment and log files
-rm -rf venv daemon.log daemon_error.log
-```
-
-### 4. Optional: Uninstall Homebrew Packages (if not used elsewhere)
-```bash
-brew uninstall ghostscript libusb
+# Remove driver files
+sudo rm -rf /Library/Printers/foo2zjs
+sudo rm -f /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
 ```
