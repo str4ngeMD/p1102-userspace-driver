@@ -81,7 +81,7 @@ Initially, to send the generated ZJS file to the physical USB port without sandb
 Instead of bypassing the CUPS sandbox with a loopback TCP socket server and running a heavy Ghostscript rasterizer, we integrated directly into the CUPS printing pipeline natively:
 1. **Native CUPS Raster Format:** We patched the official `foo2zjs.c` driver to parse the standard `application/vnd.cups-raster` format. Since macOS's built-in CUPS system natively converts PDFs and PostScript to raw raster scanlines, our custom filter (`rastertozjs`) does not need Ghostscript!
 2. **Apple Silicon Native Compilation:** We compiled the patched driver natively as an ARM64 binary. By linking *only* to macOS's core `libcups.dylib` and `libSystem.dylib`, the binary is 100% sandbox-compliant and has zero third-party/Homebrew dependencies.
-3. **No Active Servers:** The print queue directly calls `/Library/Printers/foo2zjs/filter/rastertozjs`, which converts the stream and pipes the raw ZjStream output to the printer natively.
+3. **No Active Servers:** The print queue directly calls `/Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs`, which converts the stream and pipes the raw ZjStream output to the printer natively.
 
 ---
 

@@ -26,7 +26,7 @@ The system is composed of four lightweight parts working in sequence:
 [Mac Applications] ➔ [CUPS Print Spooler]
                             | (Natively renders PDF to Raster)
                             v
-           [/Library/Printers/foo2zjs/filter/rastertozjs] (C raster filter)
+           [/Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs] (C raster filter)
                             | (Pipes output)
                             v
            [/usr/libexec/cups/backend/usb] (Standard macOS USB Backend)

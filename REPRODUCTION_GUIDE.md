@@ -82,7 +82,7 @@ To pair macOS's native rendering pipeline with our newly compiled binary, we man
 
 * **Redirected the filter pipeline:** We changed the cupsFilter target from `foomatic-rip` to our native `rastertozjs` binary, instructing macOS to render PDF documents to standard CUPS Raster format first:
   ```text
-  *cupsFilter: "application/vnd.cups-raster 0 /Library/Printers/foo2zjs/filter/rastertozjs"
+  *cupsFilter: "application/vnd.cups-raster 0 /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs"
   ```
 * **Bypassed Foomatic wrappers:** We replaced legacy comment tags (which were ignored by macOS and caused the driver to fall back to 100 DPI) with standard PostScript dictionary entries.
 * **Details:** For a full line-by-line diff of our modifications and the rationale behind each one, see [PPD_TRANSFORMATION.md](PPD_TRANSFORMATION.md).

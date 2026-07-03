@@ -6,13 +6,44 @@ It completely bypasses the macOS CUPS sandbox restrictions and kernel-level USB 
 
 ---
 
+## ⚡️ Quick Start (One-Command Install)
+
+To install the native print driver and hotplug uploader instantly:
+
+1. **Clone this repository** (or download it as a ZIP and decompress it):
+   ```bash
+   git clone https://github.com/str4ngemd/p1102-userspace-driver.git
+   cd p1102-userspace-driver
+   ```
+2. **Run the installation script as a regular user** (do **NOT** run as `sudo ./install.sh` so that the launchd agent registers correctly in your user space; the script will prompt for your administrator password automatically when copying files to system folders):
+   ```bash
+   ./install.sh
+   ```
+3. **Turn on the printer** and plug in the USB cable. macOS will automatically detect the device and build the queue using our native driver!
+
+*(Once installed, the driver operates fully self-contained within `/Library/Printers/foo2zjs-str4ngemd`. You can safely delete the cloned repository folder.)*
+
+---
+
+## 🗑️ Quick Uninstall
+
+To completely remove the driver and stop the hotplug background daemon:
+
+1. **Open the repository folder** in your terminal and run:
+   ```bash
+   ./uninstall.sh
+   ```
+   *(Run as a regular user; the script will prompt for your administrator password automatically when removing system folders).*
+
+---
+
 ## How It Works
 
 ```
 [Mac Applications] ➔ [CUPS Print Spooler]
                             | (Natively renders PDF to Raster)
                             v
-           [/Library/Printers/foo2zjs/filter/rastertozjs] (Native Filter)
+           [/Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs] (Native Filter)
                             | (Reads CUPS Raster, compresses to ZjStream)
                             v
            [/usr/libexec/cups/backend/usb] (Direct USB Transmission)
@@ -61,14 +92,14 @@ Follow these steps to deploy the pre-compiled files already present in this repo
 Copy the pre-compiled filter binary to the standard CUPS filter path:
 ```bash
 # Create filter and bin directories
-sudo mkdir -p /Library/Printers/foo2zjs/filter/
-sudo mkdir -p /Library/Printers/foo2zjs/bin/
-sudo mkdir -p /Library/Printers/foo2zjs/firmware/
+sudo mkdir -p /Library/Printers/foo2zjs-str4ngemd/filter/
+sudo mkdir -p /Library/Printers/foo2zjs-str4ngemd/bin/
+sudo mkdir -p /Library/Printers/foo2zjs-str4ngemd/firmware/
 
 # Copy the native filter binary
-sudo cp rastertozjs /Library/Printers/foo2zjs/filter/rastertozjs
-sudo chown root:wheel /Library/Printers/foo2zjs/filter/rastertozjs
-sudo chmod 0555 /Library/Printers/foo2zjs/filter/rastertozjs
+sudo cp rastertozjs /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs
+sudo chown root:wheel /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs
+sudo chmod 0555 /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs
 ```
 
 ### Step 2: Install the custom PPD
@@ -83,18 +114,18 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 1. Copy the uploader daemon, firmware, and plist files to their target paths:
    ```bash
    # Copy the script
-   sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs/bin/p1102_fw_uploader.py
-   sudo chmod 0755 /Library/Printers/foo2zjs/bin/p1102_fw_uploader.py
+   sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader.py
+   sudo chmod 0755 /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader.py
 
    # Copy the firmware
-   sudo cp firmware/sihpP1102.dl /Library/Printers/foo2zjs/firmware/sihpP1102.dl
+   sudo cp firmware/sihpP1102.dl /Library/Printers/foo2zjs-str4ngemd/firmware/sihpP1102.dl
 
    # Copy the launchd agent
    cp com.str4ngemd.p1102-fw-uploader.plist ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
    ```
 2. Create the Python virtual environment inside the destination directory so that the daemon runs self-contained. (Once complete, you can safely delete this cloned repository folder):
    ```bash
-   cd /Library/Printers/foo2zjs/bin
+   cd /Library/Printers/foo2zjs-str4ngemd/bin
    sudo python3 -m venv venv
    sudo ./venv/bin/pip install pyusb
    ```
@@ -111,15 +142,15 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 2. **Auto-Recognition:** macOS will automatically detect the USB printer and create the printer queue using our custom `HP LaserJet Pro P1102 Native` driver!
 3. **Consolidated Log Viewing:** You can tail the uploader daemon log in real-time to watch USB events and print jobs together:
    ```bash
-   tail -f /Library/Printers/foo2zjs/bin/fw_uploader.log
+   tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.log
    ```
    When you send a job, the logs will dynamically stream the entire pipeline:
    ```text
    [2026-07-03 18:58:12] Starting HP LaserJet P1102 USB Uploader & Monitor Daemon...
    [2026-07-03 18:58:12] Monitoring CUPS error log at /var/log/cups/error_log for P1102 print jobs...
-   [2026-07-03 18:58:12] Uploading firmware '/Library/Printers/foo2zjs/firmware/sihpP1102.dl' to device URI 'usb://Hewlett-Packard/HP%20LaserJet%20Professional%20P1102?serial=...'...
+   [2026-07-03 18:58:12] Uploading firmware '/Library/Printers/foo2zjs-str4ngemd/firmware/sihpP1102.dl' to device URI 'usb://Hewlett-Packard/HP%20LaserJet%20Professional%20P1102?serial=...'...
    [2026-07-03 18:58:19] Firmware upload successful. Printer should boot up.
-   [CUPS] [Job 52] Started filter /Library/Printers/foo2zjs/filter/rastertozjs (PID 98176)
+   [CUPS] [Job 52] Started filter /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs (PID 98176)
    [CUPS] [Job 52] rastertozjs: Start Document (Model=2 Density=3 EconoMode=1 InputSlot=7 MediaType=1)
    [CUPS] [Job 52] rastertozjs: Processing Page 1 (4769 x 6828 @ 600 x 600 DPI)
    [CUPS] [Job 52] rastertozjs: Finished Page 1
@@ -130,7 +161,7 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 
 ---
 
-## Uninstall
+## Manual Uninstall
 
 To completely remove the native print driver:
 ```bash
@@ -139,6 +170,6 @@ launchctl unload ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
 rm ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
 
 # Remove driver files
-sudo rm -rf /Library/Printers/foo2zjs
+sudo rm -rf /Library/Printers/foo2zjs-str4ngemd
 sudo rm -f /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
 ```

@@ -76,7 +76,7 @@ Below are the exact manual modifications applied to the PPD to enable this nativ
 -*cupsFilter:	"application/vnd.cups-postscript 100 foomatic-rip"
 -*cupsFilter:	"application/vnd.cups-pdf 0 foomatic-rip"
 -*%pprRIP:        foomatic-rip other
-+*cupsFilter:	"application/vnd.cups-raster 0 /Library/Printers/foo2zjs/filter/rastertozjs"
++*cupsFilter:	"application/vnd.cups-raster 0 /Library/Printers/foo2zjs-str4ngemd/filter/rastertozjs"
 ```
 
 #### Why:

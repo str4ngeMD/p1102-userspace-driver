@@ -6,16 +6,16 @@
     <string>com.str4ngemd.p1102-fw-uploader</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Library/Printers/foo2zjs/bin/venv/bin/python3</string>
-        <string>/Library/Printers/foo2zjs/bin/p1102_fw_uploader.py</string>
+        <string>/Library/Printers/foo2zjs-str4ngemd/bin/venv/bin/python3</string>
+        <string>/Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Library/Printers/foo2zjs/bin/fw_uploader.log</string>
+    <string>/Users/REPLACE_WITH_USER_NAME/Library/Logs/com.str4ngemd.p1102-fw-uploader.log</string>
     <key>StandardErrorPath</key>
-    <string>/Library/Printers/foo2zjs/bin/fw_uploader.err</string>
+    <string>/Users/REPLACE_WITH_USER_NAME/Library/Logs/com.str4ngemd.p1102-fw-uploader.err</string>
 </dict>
 </plist>

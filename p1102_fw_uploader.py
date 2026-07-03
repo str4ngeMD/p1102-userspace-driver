@@ -19,7 +19,7 @@ PRINTER_PID = 0x002A
 
 # Try to find the firmware file in standard installation locations
 FIRMWARE_LOCATIONS = [
-    "/Library/Printers/foo2zjs/firmware/sihpP1102.dl",
+    "/Library/Printers/foo2zjs-str4ngemd/firmware/sihpP1102.dl",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "sihpP1102.dl"),
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "../sihpP1102.dl"),
     "/Users/sorce/code/hplipmaybe/sihpP1102.dl"
