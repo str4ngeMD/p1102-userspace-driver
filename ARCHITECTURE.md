@@ -81,3 +81,6 @@ During the development and testing phases, we ran into several subtle hardware a
 * **Resolution:** 
   1. Updated `p1102_fw_uploader.py` to spawn a background thread that tails `/var/log/cups/error_log` in real-time, matching job IDs for our P1102 queue and presenting the output consolidated in the uploader's console stream.
   2. Patched the C filter to print key milestone messages (Start Doc, Processing Page, Finished Page) to `stderr`, which CUPS intercepts and streams directly to our consolidator.
+  3. Directed launchd to log both output streams to user space. They can be read in real-time:
+     * **Standard Logs (`.log`):** `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.log` (monitors USB connections, firmware uploads, and CUPS filters).
+     * **Standard Error (`.err`):** `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err` (captures any unhandled Python daemon exceptions/tracebacks for troubleshooting; empty under normal operation).

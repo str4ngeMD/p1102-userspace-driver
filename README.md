@@ -139,11 +139,12 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 ## Dynamic Verification & Logging
 
 1. **Clean Boot Test:** Power-cycle the printer completely (unplug both power and USB, wait 10 seconds, then plug back in and turn on).
-2. **Auto-Recognition:** macOS will automatically detect the USB printer and create the printer queue using our custom `HP LaserJet Pro P1102 Native` driver!
-3. **Consolidated Log Viewing:** You can tail the uploader daemon log in real-time to watch USB events and print jobs together:
+2. **Auto-Recognition:** macOS will automatically detect the USB printer and create the printer queue using our custom `HP LaserJet Pro P1102 Native (str4ngemd)` driver!
+3. **Consolidated Log Viewing:** You can tail the uploader daemon log in real-time to watch USB events and print jobs:
    ```bash
    tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.log
    ```
+   *(To troubleshoot background Python daemon crashes or exceptions, tail the error log: `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err`)*
    When you send a job, the logs will dynamically stream the entire pipeline:
    ```text
    [2026-07-03 18:58:12] Starting HP LaserJet P1102 USB Uploader & Monitor Daemon...

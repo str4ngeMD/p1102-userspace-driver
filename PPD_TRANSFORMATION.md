@@ -116,12 +116,12 @@ Below are the exact manual modifications applied to the PPD to enable this nativ
 ```diff
 -*ShortNickName: "HP Las.Jet Pro P1102 foo2zjs-z2"
 -*NickName:      "HP LaserJet Pro P1102 Foomatic/foo2zjs-z2 (recommended)"
-+*ShortNickName: "HP LaserJet Pro P1102 Native"
-+*NickName:      "HP LaserJet Pro P1102 Native"
++*ShortNickName: "HP LaserJet Pro P1102 Native (str4ngemd)"
++*NickName:      "HP LaserJet Pro P1102 Native (str4ngemd)"
 ```
 
 #### Why:
-* Simplifies the branding so that the printer displays cleanly as `HP LaserJet Pro P1102 Native` inside macOS System Settings and print sheets, avoiding confusing "Foomatic" developer branding.
+* Simplifies the branding so that the printer's Model details displays as `HP LaserJet Pro P1102 Native (str4ngemd)` inside macOS System Settings, while keeping the main queue name clean and avoiding confusing "Foomatic" developer branding.
 
 ---
 
