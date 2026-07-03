@@ -129,7 +129,7 @@ If you want to reconstruct the native `rastertozjs` binary from scratch, follow 
    git clone https://github.com/OpenPrinting/foo2zjs.git foo2zjs-src
    ```
 2. **Apply our C Raster Patch:**
-   Apply our custom CUPS-integration patch [foo2zjs_cups.patch](file:///Users/sorce/code/p1102-userspace-driver/foo2zjs_cups.patch) to the source folder:
+   Apply our custom CUPS-integration patch [foo2zjs_cups.patch](foo2zjs_cups.patch) to the source folder:
    ```bash
    cd foo2zjs-src
    patch -p1 < ../foo2zjs_cups.patch

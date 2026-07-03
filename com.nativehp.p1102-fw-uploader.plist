@@ -3,10 +3,10 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nativehp.p1102-fw-uploader</string>
+    <string>com.str4ngemd.p1102-fw-uploader</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/sorce/code/hplipmaybe/venv/bin/python3</string>
+        <string>/FULLPATHTOYOURVENV/venv/bin/python3</string>
         <string>/Library/Printers/foo2zjs/bin/p1102_fw_uploader.py</string>
     </array>
     <key>RunAtLoad</key>

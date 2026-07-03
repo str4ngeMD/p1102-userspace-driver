@@ -6,7 +6,7 @@ This document explains the technical implementation of resolution mapping and ra
 
 ## 1. How CUPS Handles Resolution Dynamically
 
-In our custom PPD [HP_LaserJet_Professional_P1102.ppd](file:///Users/sorce/code/hplipmaybe/print%20lab%202/HP_LaserJet_Professional_P1102.ppd), we define the resolution options using standard CUPS keys:
+In our custom PPD [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd), we define the resolution options using standard CUPS keys:
 
 ```text
 *OpenUI *Resolution/Resolution: PickOne
