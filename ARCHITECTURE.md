@@ -14,7 +14,7 @@ Historically, running ZjStream (`zjs`) printers on macOS was blocked by two issu
 ### The Solution:
 Instead of running a TCP socket server daemon or bundling a massive Ghostscript binary, this implementation:
 * **Patches `foo2zjs.c`** to read the standard `application/vnd.cups-raster` format directly. Since macOS's built-in CUPS rasterizer converts PDF/PostScript to raster natively, our filter doesn't need Ghostscript! It compiles as a single, lightweight C binary (`rastertozjs`) linking to macOS's core `libcups.dylib`.
-* **Deploys a passive background daemon (`p1102_fw_uploader.py`)** that only triggers when a USB connection event occurs. It uploads the firmware once, then sleeps.
+* **Deploys a passive background daemon (`p1102_fw_uploader`)** that only triggers when a USB connection event occurs. It uploads the firmware once, then sleeps.
 
 ---
 
@@ -37,8 +37,8 @@ The system is composed of four lightweight parts working in sequence:
 
 1. **`rastertozjs` C Filter Binary:** A compiled ARM64 C utility. CUPS pipes `application/vnd.cups-raster` data into its standard input, and the filter outputs compressed ZjStream data to standard output. It links only to macOS system libraries (`libcups.2.dylib` and `libSystem.B.dylib`), running safely within the strict CUPS sandbox.
 2. **`HP_LaserJet_Professional_P1102.ppd` Printer Description:** Defines printer attributes and capabilities. It maps user choices (resolution, toner density, paper size, tray selection) into CUPS environment variables and options which are fed directly into the C filter.
-3. **`p1102_fw_uploader.py` Python Daemon:** Monitors the USB bus for the LaserJet P1102 hardware connection. When detected, it pushes the firmware payload `sihpP1102.dl` directly to the printer's USB endpoint. It also tails `/var/log/cups/error_log` in real-time, consolidating print status updates into a unified dashboard log.
-4. **`com.str4ngemd.p1102-fw-uploader.plist` launchd Config:** Manages the lifetime of the Python daemon, ensuring it runs quietly in the user's background session.
+3. **`p1102_fw_uploader` Swift Daemon:** Monitors the USB bus for the LaserJet P1102 hardware connection. When detected, it pushes the firmware payload `sihpP1102.dl` directly to the printer's USB endpoint. It also tails `/var/log/cups/error_log` in real-time, consolidating print status updates into a unified dashboard log.
+4. **`com.str4ngemd.p1102-fw-uploader.plist` launchd Config:** Manages the lifetime of the Swift daemon, ensuring it runs quietly in the user's background session.
 
 > * For compilation, patch application, and firmware extraction details, see [REPRODUCTION_GUIDE.md](REPRODUCTION_GUIDE.md).
 > * For PPD modification diffs, see [PPD_TRANSFORMATION.md](PPD_TRANSFORMATION.md).
@@ -79,8 +79,8 @@ During the development and testing phases, we ran into several subtle hardware a
 ### E. Unified Diagnostic Stream
 * **Problem:** Tailing `/var/log/cups/error_log` was a manual, hard-to-remember task when debugging the print filter's status.
 * **Resolution:** 
-  1. Updated `p1102_fw_uploader.py` to spawn a background thread that tails `/var/log/cups/error_log` in real-time, matching job IDs for our P1102 queue and presenting the output consolidated in the uploader's console stream.
+  1. Updated the Swift daemon to spawn a background thread that tails `/var/log/cups/error_log` in real-time, matching job IDs for our P1102 queue and presenting the output consolidated in the uploader's console stream.
   2. Patched the C filter to print key milestone messages (Start Doc, Processing Page, Finished Page) to `stderr`, which CUPS intercepts and streams directly to our consolidator.
   3. Directed launchd to log both output streams to user space. They can be read in real-time:
      * **Standard Logs (`.log`):** `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.log` (monitors USB connections, firmware uploads, and CUPS filters).
-     * **Standard Error (`.err`):** `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err` (captures any unhandled Python daemon exceptions/tracebacks for troubleshooting; empty under normal operation).
+     * **Standard Error (`.err`):** `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err` (captures any unhandled Swift daemon exceptions/tracebacks for troubleshooting; empty under normal operation).

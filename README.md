@@ -54,7 +54,7 @@ To completely remove the driver and stop the hotplug background daemon:
 
 1. **No External Rasterizer (Bypasses Ghostscript):** Instead of executing Homebrew Ghostscript (`gs`) to perform rasterization (which is blocked by the CUPS sandbox), our native filter binary `rastertozjs` reads the standard `application/vnd.cups-raster` stream generated natively by macOS. It is a single, lightweight C executable (20KB) linking only to the core macOS system libraries (`libcups.2.dylib` and `libSystem.B.dylib`).
 2. **Dynamic Parameter Mapping:** Resolves resolution (600 DPI vs. 1200 DPI), toner density (1–5), toner saving (EconoMode/Draft), input paper tray selection, and media paper type (labels, envelopes, cardstock) dynamically from standard print dialog settings.
-3. **Passive Hotplug Daemon (`p1102_fw_uploader.py`):** The LaserJet P1102 stores its firmware in volatile memory and expects a firmware upload (`sihpP1102.dl`) every time it boots. The Python daemon runs passively, detects when the printer is connected to a USB port, uploads the firmware once, and then sleeps. 
+3. **Passive Hotplug Daemon (`p1102_fw_uploader`):** The LaserJet P1102 stores its firmware in volatile memory and expects a firmware upload (`sihpP1102.dl`) every time it boots. The compiled Swift daemon runs passively, detects when the printer is connected to a USB port, uploads the firmware, and then sleeps. 
 4. **Unified Log Consolidation:** The daemon tails `/var/log/cups/error_log` in real-time, pulling filter progress and USB print events into a single, unified logging stream for easy diagnostics.
 
 ---
@@ -78,7 +78,7 @@ If you are a developer looking to rebuild, compile, or understand the internals 
 * [rastertozjs](rastertozjs) - Pre-compiled Apple Silicon native CUPS filter binary.
 * [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd) - Native CUPS PPD file.
 * [original.ppd](original.ppd) - Legacy upstream Foomatic-based PPD file.
-* [p1102_fw_uploader.py](p1102_fw_uploader.py) - USB monitor and log consolidator script.
+* [p1102_fw_uploader.swift](p1102_fw_uploader.swift) - Native Swift USB monitor and log consolidator daemon.
 * [com.str4ngemd.p1102-fw-uploader.plist](com.str4ngemd.p1102-fw-uploader.plist) - launchd system agent config file.
 * `firmware/sihpP1102.dl` - Volatile engine firmware file.
 
@@ -111,11 +111,13 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 ```
 
 ### Step 3: Install the Firmware & Hotplug Daemon
-1. Copy the uploader daemon, firmware, and plist files to their target paths:
+1. Compile the native Swift uploader daemon and copy it along with the firmware and plist configurations:
    ```bash
-   # Copy the script
-   sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader.py
-   sudo chmod 0755 /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader.py
+   # Compile and copy the uploader daemon
+   swiftc p1102_fw_uploader.swift -o p1102_fw_uploader
+   sudo cp p1102_fw_uploader /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader
+   sudo chmod 0755 /Library/Printers/foo2zjs-str4ngemd/bin/p1102_fw_uploader
+   rm -f p1102_fw_uploader
 
    # Copy the firmware
    sudo cp firmware/sihpP1102.dl /Library/Printers/foo2zjs-str4ngemd/firmware/sihpP1102.dl
@@ -123,13 +125,7 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
    # Copy the launchd agent
    cp com.str4ngemd.p1102-fw-uploader.plist ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
    ```
-2. Create the Python virtual environment inside the destination directory so that the daemon runs self-contained. (Once complete, you can safely delete this cloned repository folder):
-   ```bash
-   cd /Library/Printers/foo2zjs-str4ngemd/bin
-   sudo python3 -m venv venv
-   sudo ./venv/bin/pip install pyusb
-   ```
-3. Load the launchd background agent:
+2. Load the launchd background agent:
    ```bash
    launchctl load ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
    ```
@@ -144,7 +140,7 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
    ```bash
    tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.log
    ```
-   *(To troubleshoot background Python daemon crashes or exceptions, tail the error log: `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err`)*
+   *(To troubleshoot background Swift daemon crashes or exceptions, tail the error log: `tail -f ~/Library/Logs/com.str4ngemd.p1102-fw-uploader.err`)*
    When you send a job, the logs will dynamically stream the entire pipeline:
    ```text
    [2026-07-03 18:58:12] Starting HP LaserJet P1102 USB Uploader & Monitor Daemon...
