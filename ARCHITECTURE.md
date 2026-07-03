@@ -1,13 +1,14 @@
 # Architecture: 100% Native USB Printing on macOS ARM64 (P1102)
 
-This directory documents and contains the implementation for a 100% native, sandbox-friendly, zero-server USB printing solution for the **HP LaserJet Pro P1102** running on Apple Silicon Macs.
+This document explains the architecture design of the native, sandbox-friendly, zero-server USB printing solution for the **HP LaserJet Pro P1102** running on Apple Silicon Macs.
 
 ---
 
-## 1. The Design Principle
+## 1. Design Principles
 
 Historically, running ZjStream (`zjs`) printers on macOS was blocked by two issues:
-1. **Ghostscript Sandboxing:** The open-source `foo2zjs` driver relies on Ghostscript to convert PDF print streams into intermediate Portable Bitmaps (PBM), which is then converted to ZjStream. Because the macOS CUPS print sandbox blocks executing Homebrew-installed utilities like `gs`, developers were forced to bundle massive, patched Ghostscript runtimes or redirect printing over a local TCP loopback server.
+
+1. **Ghostscript Sandboxing:** The open-source `foo2zjs` driver relies on Ghostscript to convert PDF print streams into intermediate Portable Bitmaps (PBM), which are then converted to ZjStream. Because the macOS CUPS print sandbox blocks executing Homebrew-installed utilities like `gs`, developers were forced to bundle massive, patched Ghostscript runtimes or redirect printing over a local TCP loopback server.
 2. **Volatile Firmware Uploader:** The P1102 lacks persistent storage for its engine firmware. It loses its firmware on power-off, requiring the host computer to upload `sihpP1102.dl` over USB upon every connection.
 
 ### The Solution:
@@ -17,62 +18,34 @@ Instead of running a TCP socket server daemon or bundling a massive Ghostscript 
 
 ---
 
-## 2. File Manifest
+## 2. Component Layout
 
-* [ARCHITECTURE.md](ARCHITECTURE.md) - This document.
-* [foo2zjs_cups.patch](foo2zjs_cups.patch) - Unified git diff of the changes applied to the official `foo2zjs.c` to add native CUPS raster support.
-* [p1102_fw_uploader.py](p1102_fw_uploader.py) - Simple Python USB hotplug agent to upload firmware.
-* [com.nativehp.p1102-fw-uploader.plist](com.nativehp.p1102-fw-uploader.plist) - launchd system agent.
-* [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd) - Print queue definition pointing to `rastertozjs` filter.
+The system is composed of four lightweight parts working in sequence:
 
-> See RESEARCH_HISTORY.md for details of how we acquired the firmware.
+```
+[Mac Applications] ➔ [CUPS Print Spooler]
+                            | (Natively renders PDF to Raster)
+                            v
+           [/Library/Printers/foo2zjs/filter/rastertozjs] (C raster filter)
+                            | (Pipes output)
+                            v
+           [/usr/libexec/cups/backend/usb] (Standard macOS USB Backend)
+                            |
+                            v
+                       [P1102 Printer]
+```
 
----
+1. **`rastertozjs` C Filter Binary:** A compiled ARM64 C utility. CUPS pipes `application/vnd.cups-raster` data into its standard input, and the filter outputs compressed ZjStream data to standard output. It links only to macOS system libraries (`libcups.2.dylib` and `libSystem.B.dylib`), running safely within the strict CUPS sandbox.
+2. **`HP_LaserJet_Professional_P1102.ppd` Printer Description:** Defines printer attributes and capabilities. It maps user choices (resolution, toner density, paper size, tray selection) into CUPS environment variables and options which are fed directly into the C filter.
+3. **`p1102_fw_uploader.py` Python Daemon:** Monitors the USB bus for the LaserJet P1102 hardware connection. When detected, it pushes the firmware payload `sihpP1102.dl` directly to the printer's USB endpoint. It also tails `/var/log/cups/error_log` in real-time, consolidating print status updates into a unified dashboard log.
+4. **`com.str4ngemd.p1102-fw-uploader.plist` launchd Config:** Manages the lifetime of the Python daemon, ensuring it runs quietly in the user's background session.
 
-## 3. Step-by-Step Installation
-
-### Step A: Compile and Install the Native Filter
-1. Navigate to the `foo2zjs-src` directory and compile the patched filter natively:
-   ```bash
-   clang -O2 -Wall -DcupsFilter -I. -lcups \
-     foo2zjs.c jbig.c jbig_ar.c \
-     -o rastertozjs
-   ```
-2. Copy the filter to the CUPS filter directory:
-   ```bash
-   sudo mkdir -p /Library/Printers/foo2zjs/filter/
-   sudo cp rastertozjs /Library/Printers/foo2zjs/filter/
-   sudo chown root:wheel /Library/Printers/foo2zjs/filter/rastertozjs
-   sudo chmod 0555 /Library/Printers/foo2zjs/filter/rastertozjs
-   ```
-
-### Step B: Install the PPD
-1. Copy the custom PPD file to the macOS system PPD folder:
-   ```bash
-   sudo cp HP_LaserJet_Professional_P1102.ppd /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
-   sudo chown root:wheel /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
-   sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Professional_P1102_Native.ppd
-   ```
-
-### Step C: Configure the Firmware Uploader
-1. Install Python dependency:
-   ```bash
-   pip3 install pyusb
-   ```
-2. Copy the uploader script and plist:
-   ```bash
-   sudo mkdir -p /Library/Printers/foo2zjs/bin/
-   sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs/bin/
-   sudo cp com.nativehp.p1102-fw-uploader.plist /Library/LaunchDaemons/
-   ```
-3. Load the launchd daemon:
-   ```bash
-   sudo launchctl load -w /Library/LaunchDaemons/com.nativehp.p1102-fw-uploader.plist
-   ```
+> * For compilation, patch application, and firmware extraction details, see [REPRODUCTION_GUIDE.md](REPRODUCTION_GUIDE.md).
+> * For PPD modification diffs, see [PPD_TRANSFORMATION.md](PPD_TRANSFORMATION.md).
 
 ---
 
-## 4. History of Problem Solving & Debugging Decisions
+## 3. History of Problem Solving & Debugging Decisions
 
 During the development and testing phases, we ran into several subtle hardware and firmware integration challenges. This section archives the root causes and technical fixes for posterity.
 
@@ -108,45 +81,3 @@ During the development and testing phases, we ran into several subtle hardware a
 * **Resolution:** 
   1. Updated `p1102_fw_uploader.py` to spawn a background thread that tails `/var/log/cups/error_log` in real-time, matching job IDs for our P1102 queue and presenting the output consolidated in the uploader's console stream.
   2. Patched the C filter to print key milestone messages (Start Doc, Processing Page, Finished Page) to `stderr`, which CUPS intercepts and streams directly to our consolidator.
-
----
-
-## 5. Building From Source
-
-If you want to reconstruct the native `rastertozjs` binary from scratch, follow these instructions.
-
-### Prerequisites
-* **macOS Command Line Tools:** Install compiler tools by running:
-  ```bash
-  xcode-select --install
-  ```
-  The macOS SDK contains the required CUPS headers (`<cups/cups.h>`, `<cups/raster.h>`) out-of-the-box. No external libraries are needed.
-
-### Compilation Steps
-1. **Clone the Original Driver Suite:**
-   Clone the official upstream open-source driver package:
-   ```bash
-   git clone https://github.com/OpenPrinting/foo2zjs.git foo2zjs-src
-   ```
-2. **Apply our C Raster Patch:**
-   Apply our custom CUPS-integration patch [foo2zjs_cups.patch](foo2zjs_cups.patch) to the source folder:
-   ```bash
-   cd foo2zjs-src
-   patch -p1 < ../foo2zjs_cups.patch
-   ```
-3. **Compile Natively:**
-   Run `clang` to compile the patched code, linking to the standard macOS CUPS library (`-lcups`):
-   ```bash
-   clang -O2 -Wall -DcupsFilter -I. -lcups \
-     foo2zjs.c jbig.c jbig_ar.c \
-     -o rastertozjs
-   ```
-4. **Clean Up:**
-   Move the newly compiled `rastertozjs` binary to your preferred driver directory and safely remove the temporary `foo2zjs-src` build folder:
-   ```bash
-   cp rastertozjs ../rastertozjs
-   cd ..
-   rm -rf foo2zjs-src
-   ```
-
-

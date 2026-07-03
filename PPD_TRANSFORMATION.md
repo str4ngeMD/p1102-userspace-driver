@@ -8,7 +8,12 @@ It explains **what** changed between [original.ppd](original.ppd) (upstream) and
 
 ## 1. Upstream PPD Architecture (The "Foomatic" Way)
 
-The [original.ppd](original.ppd) comes from the OpenPrinting `foo2zjs` driver database. It is designed for legacy Linux/UNIX printing systems using the **Foomatic** print wrapper stack:
+The [original.ppd](original.ppd) comes from the OpenPrinting `foo2zjs` driver database. 
+
+> [!NOTE]
+> For detailed instructions on obtaining the original PPD template from the upstream repository, see **[REPRODUCTION_GUIDE.md](REPRODUCTION_GUIDE.md)**.
+
+It is designed for legacy Linux/UNIX printing systems using the **Foomatic** print wrapper stack:
 
 ```
 [Mac Application] ➔ [CUPS Spooler]
@@ -131,13 +136,14 @@ If you inspect [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P11
 ### Why we kept them:
 1. **Harmlessness:** These comment tags are ignored completely by the native CUPS workflow. Removing them is not required since CUPS skips any unrecognized line starting with `*%` or custom non-standard attributes.
 2. **UI Mapping:** The parent groups (e.g. `*OpenUI *InputSlot`) and option values (e.g. `*InputSlot Upper/Upper or Only One InputSlot`) are standard Adobe PPD parameters. macOS parses these to construct the dropdown options in the native print dialog.
-3. **C Filter Options Parsing:** When a user prints, CUPS bundles these UI choices into the 5th argument (`argv[4]`) of the filter execution command (e.g., `media=Letter InputSlot=Upper MediaType=Standard Density=Density3`). Our patched [rastertozjs](rastertozjs) C filter parses `argv[4]` directly, extracting the values and mapping them to their corresponding ZjStream codes.
+3. **C Filter Options Parsing:** When a user prints, CUPS bundles these UI choices into the 5th argument (`argv[4]`) of the filter execution command (e.g., `media=Letter InputSlot=Upper MediaType=Standard Density=Density3`). Our patched [rastertozjs](rastertozjs) C filter parses `argv[4]` directly, extracting the values and mapping them to their corresponding ZJS codes.
 
 ---
 
 ## Further Reading
-* [ARCHITECTURE.md](ARCHITECTURE.md) - Details on compilation, patching, and file paths.
-* [COMPARISON.md](COMPARISON.md) - Summary of dynamic vs. hardcoded driver features.
-* [DPI_AND_HALFTONING.md](DPI_AND_HALFTONING.md) - Technical details of 1-bit and 2-bit laser halftone rendering.
-* [RESEARCH_HISTORY.md](RESEARCH_HISTORY.md) - Timeline and reverse engineering notes.
-* [README.md](README.md) - Step-by-step installation instructions.
+* **[REPRODUCTION_GUIDE.md](REPRODUCTION_GUIDE.md)** - Learn how to build the filter binary and get original files.
+* **[ARCHITECTURE.md](ARCHITECTURE.md)** - Details on components layout and problem-solving history.
+* **[COMPARISON.md](COMPARISON.md)** - Summary of dynamic vs. hardcoded driver features.
+* **[DPI_AND_HALFTONING.md](DPI_AND_HALFTONING.md)** - Technical details of 1-bit and 2-bit laser halftone rendering.
+* **[RESEARCH_HISTORY.md](RESEARCH_HISTORY.md)** - Context on protocol reverse engineering.
+* **[README.md](README.md)** - Step-by-step installation instructions.

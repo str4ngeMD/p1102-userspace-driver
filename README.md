@@ -28,26 +28,37 @@ It completely bypasses the macOS CUPS sandbox restrictions and kernel-level USB 
 
 ---
 
-## File Manifest
+## Documentation Index
 
-* [README.md](README.md) - This document.
-* [RESEARCH_HISTORY.md](RESEARCH_HISTORY.md) - Context and reverse engineering notes.
-* [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture layout.
-* [DPI_AND_HALFTONING.md](DPI_AND_HALFTONING.md) - Technical explanation of resolutions (600/1200 DPI) and 2-bit laser pulse-width modulation.
-* [COMPARISON.md](COMPARISON.md) - Table mapping driver features and custom PPD options.
-* [foo2zjs_cups.patch](foo2zjs_cups.patch) - The clean git patch file applied to the official `foo2zjs.c` driver source to support CUPS raster input.
-* [rastertozjs](rastertozjs) - Natively compiled Apple Silicon filter binary.
-* [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd) - PPD printer description file containing resolution and tray options mapping directly to our filter.
-* [p1102_fw_uploader.py](p1102_fw_uploader.py) - USB monitor and log consolidator.
-* [com.nativehp.p1102-fw-uploader.plist](com.nativehp.p1102-fw-uploader.plist) - launchd system agent config file.
-* `firmware/sihpP1102.dl` - The P1102 firmware file.
+If you are a developer looking to rebuild, compile, or understand the internals of this project, explore the documentation links below:
+
+* **[REPRODUCTION_GUIDE.md](REPRODUCTION_GUIDE.md)** - Step-by-step instructions to compile the driver from scratch, clone upstream repositories, and extract the firmware files.
+* **[ARCHITECTURE.md](ARCHITECTURE.md)** - Deep dive into the driver's layout, component mapping, and the history of troubleshooting/debugging fixes.
+* **[PPD_TRANSFORMATION.md](PPD_TRANSFORMATION.md)** - Explains how and why the upstream foomatic PPD was modified to comply with the modern macOS sandbox.
+* **[DPI_AND_HALFTONING.md](DPI_AND_HALFTONING.md)** - Explains 600 vs. 1200 DPI resolution, bits per pixel (Bpp), pulse-width modulation, and gray dithering.
+* **[COMPARISON.md](COMPARISON.md)** - A feature grid mapping what works dynamically vs. what is hardcoded compared to the official Linux driver.
+* **[RESEARCH_HISTORY.md](RESEARCH_HISTORY.md)** - A logs/reference document detailing our UTM/QEMU setup, Wireshark USB traffic captures, and legacy daemons.
 
 ---
 
-## Installation
+## File Manifest
+
+* [foo2zjs_cups.patch](foo2zjs_cups.patch) - Unified diff patch file applied to upstream `foo2zjs.c`.
+* [rastertozjs](rastertozjs) - Pre-compiled Apple Silicon native CUPS filter binary.
+* [HP_LaserJet_Professional_P1102.ppd](HP_LaserJet_Professional_P1102.ppd) - Native CUPS PPD file.
+* [original.ppd](original.ppd) - Legacy upstream Foomatic-based PPD file.
+* [p1102_fw_uploader.py](p1102_fw_uploader.py) - USB monitor and log consolidator script.
+* [com.str4ngemd.p1102-fw-uploader.plist](com.str4ngemd.p1102-fw-uploader.plist) - launchd system agent config file.
+* `firmware/sihpP1102.dl` - Volatile engine firmware file.
+
+---
+
+## Installation (Using Pre-compiled Files)
+
+Follow these steps to deploy the pre-compiled files already present in this repository:
 
 ### Step 1: Install System Folders & Binaries
-Copy the compiled filter binary to the standard CUPS filter path:
+Copy the pre-compiled filter binary to the standard CUPS filter path:
 ```bash
 # Create filter and bin directories
 sudo mkdir -p /Library/Printers/foo2zjs/filter/
@@ -69,12 +80,7 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 ```
 
 ### Step 3: Install the Firmware & Hotplug Daemon
-1. Create a Python virtual environment to manage dependencies:
-   ```bash
-   python3 -m venv venv
-   ./venv/bin/pip install pyusb
-   ```
-2. Copy the uploader daemon, firmware, and plist files to their target paths:
+1. Copy the uploader daemon, firmware, and plist files to their target paths:
    ```bash
    # Copy the script
    sudo cp p1102_fw_uploader.py /Library/Printers/foo2zjs/bin/p1102_fw_uploader.py
@@ -83,12 +89,18 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
    # Copy the firmware
    sudo cp firmware/sihpP1102.dl /Library/Printers/foo2zjs/firmware/sihpP1102.dl
 
-   # Copy the launchd agent (replaces the old socket daemon plist)
-   cp com.nativehp.p1102-fw-uploader.plist ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
+   # Copy the launchd agent
+   cp com.str4ngemd.p1102-fw-uploader.plist ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
+   ```
+2. Create the Python virtual environment inside the destination directory so that the daemon runs self-contained. (Once complete, you can safely delete this cloned repository folder):
+   ```bash
+   cd /Library/Printers/foo2zjs/bin
+   sudo python3 -m venv venv
+   sudo ./venv/bin/pip install pyusb
    ```
 3. Load the launchd background agent:
    ```bash
-   launchctl load ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
+   launchctl load ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
    ```
 
 ---
@@ -123,8 +135,8 @@ sudo chmod 0644 /Library/Printers/PPDs/Contents/Resources/HP_LaserJet_Profession
 To completely remove the native print driver:
 ```bash
 # Unload and delete launchd agent
-launchctl unload ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
-rm ~/Library/LaunchAgents/com.nativehp.p1102-fw-uploader.plist
+launchctl unload ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
+rm ~/Library/LaunchAgents/com.str4ngemd.p1102-fw-uploader.plist
 
 # Remove driver files
 sudo rm -rf /Library/Printers/foo2zjs
