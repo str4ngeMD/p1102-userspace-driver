@@ -36,6 +36,11 @@ if [ -f "$PPD_FILE" ]; then
     sudo rm -f "$PPD_FILE"
 fi
 
+# 4. Remove user-level log files
+echo "Removing user log files..."
+rm -f "$HOME/Library/Logs/com.str4ngemd.p1102-fw-uploader.log"
+rm -f "$HOME/Library/Logs/com.str4ngemd.p1102-fw-uploader.err"
+
 echo "======================================================"
 echo "Uninstallation complete!"
 echo "======================================================"

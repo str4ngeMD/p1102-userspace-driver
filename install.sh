@@ -48,24 +48,34 @@ sudo cp HP_LaserJet_Professional_P1102.ppd "$PPD_DIR/HP_LaserJet_Professional_P1
 sudo chown root:wheel "$PPD_DIR/HP_LaserJet_Professional_P1102_Native.ppd"
 sudo chmod 0644 "$PPD_DIR/HP_LaserJet_Professional_P1102_Native.ppd"
 
-# 4. Compile and install uploader daemon & copy firmware
-echo "Compiling and installing native Swift uploader daemon..."
-if [ ! -f p1102_fw_uploader.swift ]; then
-    echo "ERROR: p1102_fw_uploader.swift not found in current folder!"
-    exit 1
+# 4. Install the uploader daemon & copy firmware
+if [ -f p1102_fw_uploader ]; then
+    echo "Installing pre-compiled native Swift uploader daemon..."
+    # Strip quarantine attribute if downloaded from the web
+    xattr -d com.apple.quarantine p1102_fw_uploader 2>/dev/null || true
+    sudo cp p1102_fw_uploader "$TARGET_DIR/bin/p1102_fw_uploader"
+    sudo chmod 0755 "$TARGET_DIR/bin/p1102_fw_uploader"
+else
+    echo "Pre-compiled daemon not found. Attempting to compile from source..."
+    if [ ! -f p1102_fw_uploader.swift ]; then
+        echo "ERROR: Neither pre-compiled p1102_fw_uploader nor p1102_fw_uploader.swift found in current folder!"
+        exit 1
+    fi
+    if ! command -v swiftc &> /dev/null; then
+        echo "ERROR: swiftc compiler not found! Please download the pre-compiled binary or install Xcode Command Line Tools."
+        exit 1
+    fi
+    swiftc p1102_fw_uploader.swift -o p1102_fw_uploader
+    sudo cp p1102_fw_uploader "$TARGET_DIR/bin/p1102_fw_uploader"
+    sudo chmod 0755 "$TARGET_DIR/bin/p1102_fw_uploader"
+    rm -f p1102_fw_uploader
 fi
+
+# Copy firmware
 if [ ! -f firmware/sihpP1102.dl ]; then
     echo "ERROR: firmware/sihpP1102.dl not found in current folder!"
     exit 1
 fi
-# Compile local binary
-swiftc p1102_fw_uploader.swift -o p1102_fw_uploader
-# Copy to system bin
-sudo cp p1102_fw_uploader "$TARGET_DIR/bin/p1102_fw_uploader"
-sudo chmod 0755 "$TARGET_DIR/bin/p1102_fw_uploader"
-# Clean up local binary
-rm -f p1102_fw_uploader
-# Copy firmware
 sudo cp firmware/sihpP1102.dl "$TARGET_DIR/firmware/sihpP1102.dl"
 
 # 6. Install launchd agent
